@@ -1,6 +1,8 @@
 // «Загрузить план»: a table (+ media or one ZIP) or a Google link goes into `inbox/<uuid>/`,
-// manifest last. A plan written by rubrics first gets the «Рубрики плана» step; the Mac's answer
-// comes back in `outbox/<uuid>.json`.
+// manifest last. A plan written by rubrics first gets the «Рубрики плана» step; a Google link
+// always gets its accounts-and-start part (the table cannot be read in the browser, so the Mac
+// keeps the table's frequencies at 10:00). The Mac's answer comes back in `outbox/<uuid>.json`,
+// its progress meanwhile in `outbox/progress/<uuid>.json`.
 
 import { $, el, isoNow, plural, setStatus, todayIn } from "./dom.js";
 import { DEFAULT_TIME, cadenceKeys, cadenceLabel, readRubrics } from "./rubrics.js";
@@ -13,6 +15,13 @@ const POSTS = ["пост", "поста", "постов"];
 const TEXTS = ["текст", "текста", "текстов"];
 const RUBRICS = ["рубрика", "рубрики", "рубрик"];
 const DRIVE = /^https:\/\/(docs|drive)\.google\.com\//;
+
+/** The day after an ISO date (YYYY-MM-DD). */
+function nextDay(iso) {
+  const day = new Date(`${iso}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 1);
+  return day.toISOString().slice(0, 10);
+}
 
 function safeName(name) {
   const cleaned = name.replace(/[\\/]/g, "_").replace(/^\.+/, "").trim();
@@ -116,12 +125,17 @@ export class UploadScreen {
         if (!DRIVE.test(this.form.elements.driveUrl.value.trim())) {
           throw new Error("Нужна ссылка на Google Таблицу или папку Google Drive.");
         }
-        parcel = { kind: "drive", files: [] };
+        parcel = { kind: "drive", files: [], rubrics: [] };
       } else {
         parcel = parcelFiles(this.form);
       }
     } catch (error) {
       this.status(error.message, "error");
+      return;
+    }
+    if (parcel.kind === "drive") {
+      this.status("");
+      this.openRubricStep(parcel);
       return;
     }
     if (parcel.table) {
@@ -144,7 +158,9 @@ export class UploadScreen {
   openRubricStep(parcel) {
     this.pendingParcel = parcel;
     const { rubrics } = parcel;
+    const drive = parcel.kind === "drive";
     const texts = rubrics.reduce((sum, rubric) => sum + rubric.count, 0);
+    const today = todayIn(this.ctx.state.zone);
     const channels = this.ctx.state.channels;
     const cards = rubrics.map((rubric, index) => el("section", { class: "card rubric-card" },
       el("div", { class: "rubric-head" },
@@ -166,7 +182,7 @@ export class UploadScreen {
       el("section", { class: "card rubric-common" },
         el("h2", {}, "Общее для всех рубрик"),
         el("label", { class: "field" }, "Начать с",
-          el("input", { name: "start", type: "date", value: todayIn(this.ctx.state.zone), required: true })),
+          el("input", { name: "start", type: "date", value: drive ? nextDay(today) : today, required: true })),
         el("fieldset", { class: "rubric-channels" },
           el("legend", {}, "Аккаунты"),
           channels.length
@@ -176,7 +192,11 @@ export class UploadScreen {
               }),
               `${channel.name} · ${channel.platform_label}`))
             : el("p", { class: "muted small" }, "Список аккаунтов появится, когда Mac выйдет на связь."))),
-      el("div", { class: "rubric-list" }, cards),
+      drive
+        ? el("p", { class: "muted small" },
+          "Если план по рубрикам, частоту Mac возьмёт из таблицы (иначе — каждый день), " +
+          "время — 10:00. Для обычного плана даты и аккаунты берутся из таблицы.")
+        : el("div", { class: "rubric-list" }, cards),
       el("div", { class: "submit-row" },
         el("button", { type: "button", onclick: () => this.closeRubricStep() }, "← Назад"),
         el("button", { type: "submit", class: "primary large" }, "Отправить план")),
@@ -187,11 +207,12 @@ export class UploadScreen {
       this.sendRubrics(form);
     });
     this.rubricStep.replaceChildren(
-      el("h1", {}, "Рубрики плана"),
-      el("p", { class: "lead" },
-        `Узнали план по рубрикам: ${rubrics.length} ${plural(rubrics.length, RUBRICS)}, ` +
-        `${texts} ${plural(texts, TEXTS)}. Задайте начало, ` +
-        "аккаунты и время — даты Mac расставит сам по частоте."),
+      el("h1", {}, drive ? "Куда публиковать" : "Рубрики плана"),
+      el("p", { class: "lead" }, drive
+        ? "Выберите аккаунты и день начала — Mac скачает план из Google и расставит посты."
+        : `Узнали план по рубрикам: ${rubrics.length} ${plural(rubrics.length, RUBRICS)}, ` +
+          `${texts} ${plural(texts, TEXTS)}. Задайте начало, ` +
+          "аккаунты и время — даты Mac расставит сам по частоте."),
       form,
     );
     this.form.hidden = true;
@@ -218,8 +239,10 @@ export class UploadScreen {
       cadence: rubric.ownDates ? rubric.cadence || "1" : form.elements[`cadence-${index}`].value,
       at: form.elements[`time-${index}`].value || DEFAULT_TIME,
     }));
+    const choices = { start_date: form.elements.start.value, channels };
+    if (rubrics.length) choices.rubrics = rubrics;
     this.closeRubricStep();
-    await this.upload(parcel, { start_date: form.elements.start.value, channels, rubrics });
+    await this.upload(parcel, choices);
   }
 
   async upload(parcel, choices) {
@@ -263,6 +286,11 @@ export class UploadScreen {
     }
   }
 
+  /** Whether the Mac is working on a sent parcel right now (the page then polls faster). */
+  inProgress() {
+    return readStored(SENDS_KEY, []).some((item) => !item.answer && item.progress);
+  }
+
   /** Whether a parcel still waits for the Mac's answer (the page then keeps polling). */
   waiting() {
     return readStored(SENDS_KEY, []).some((item) => !item.answer);
@@ -274,6 +302,7 @@ export class UploadScreen {
       try {
         const answer = await this.ctx.bucket.getJson(`outbox/${item.id}.json`);
         if (answer) item.answer = answer;
+        item.progress = answer ? null : await this.ctx.bucket.getJson(`outbox/progress/${item.id}.json`);
       } catch (error) {
         item.problem = error.message;
       }
@@ -283,7 +312,8 @@ export class UploadScreen {
     this.sends.replaceChildren(...sends.map((item) => {
       let badge;
       if (!item.answer) {
-        badge = el("span", { class: "status pending" }, item.problem || "ждёт Mac");
+        badge = el("span", { class: "status pending" },
+          item.problem || item.progress?.label || "ждёт Mac");
       } else if (item.answer.status === "accepted") {
         badge = el("span", { class: "status posted" },
           `принято: ${item.answer.posts} ${plural(item.answer.posts, POSTS)}`);

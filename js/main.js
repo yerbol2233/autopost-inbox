@@ -12,6 +12,7 @@ import { UploadScreen } from "./upload.js";
 
 const CONFIG_KEY = "autopost-inbox";
 const ANSWER_POLL_MS = 10_000;
+const PROGRESS_POLL_MS = 5_000;
 const PRESENCE_MS = 60_000;
 const STATE_REFRESH_MS = 60_000;
 const SCREENS = {
@@ -70,6 +71,7 @@ class RemotePage {
     this.timers = [
       setInterval(() => this.writePresence(), PRESENCE_MS),
       setInterval(() => this.checkAnswers(), ANSWER_POLL_MS),
+      setInterval(() => this.upload.inProgress() && this.upload.renderSends(), PROGRESS_POLL_MS),
       setInterval(() => this.refresh({ quiet: true }), STATE_REFRESH_MS),
     ];
   }
