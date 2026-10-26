@@ -7,6 +7,7 @@ import { $, el } from "./dom.js";
 import { renderJournal } from "./journal.js";
 import { Bucket, hostOf } from "./s3.js";
 import { MacState } from "./state.js";
+import { ReviewsScreen } from "./reviews.js";
 import { readStored, writeStored } from "./storage.js";
 import { UploadScreen } from "./upload.js";
 
@@ -20,6 +21,7 @@ const SCREENS = {
   calendar: renderCalendar,
   accounts: renderAccounts,
   journal: renderJournal,
+  reviews: null,
 };
 
 function readConfig() {
@@ -57,6 +59,7 @@ class RemotePage {
       rerender: () => this.render(),
     };
     this.upload = new UploadScreen($("screen-upload"), this.ctx);
+    this.reviews = new ReviewsScreen($("screen-reviews"), this.ctx);
   }
 
   start() {
@@ -130,6 +133,7 @@ class RemotePage {
     pill.className = "mac-pill " + (connection.online ? "online" : "offline");
     if (!(quiet && this.screen === "calendar" && calendarBusy())) this.render();
     this.upload.renderSends();
+    this.reviews.renderCounts();
   }
 
   async checkAnswers() {

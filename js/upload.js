@@ -14,6 +14,7 @@ const TABLE = /\.(xlsx|csv)$/i;
 const POSTS = ["пост", "поста", "постов"];
 const TEXTS = ["текст", "текста", "текстов"];
 const RUBRICS = ["рубрика", "рубрики", "рубрик"];
+const REVIEWS = ["отзыв", "отзыва", "отзывов"];
 const DRIVE = /^https:\/\/(docs|drive)\.google\.com\//;
 
 /** The day after an ISO date (YYYY-MM-DD). */
@@ -23,9 +24,16 @@ function nextDay(iso) {
   return day.toISOString().slice(0, 10);
 }
 
-function safeName(name) {
+export function safeName(name) {
   const cleaned = name.replace(/[\\/]/g, "_").replace(/^\.+/, "").trim();
   return cleaned || "file";
+}
+
+/** Remember a sent parcel so «Отправленные» shows the Mac's answer to it. */
+export function rememberSend(entry) {
+  const sends = readStored(SENDS_KEY, []);
+  sends.unshift(entry);
+  writeStored(SENDS_KEY, sends.slice(0, MAX_SENDS));
 }
 
 function parcelFiles(form) {
@@ -269,11 +277,9 @@ export class UploadScreen {
       this.status("Завершаю отправку…");
       await this.ctx.bucket.putJson(`inbox/${id}/manifest.json`, manifest);
       progress.value = 1;
-      const sends = readStored(SENDS_KEY, []);
-      sends.unshift({
+      rememberSend({
         id, title: manifest.plan_name || parcel.files[0]?.name || manifest.drive_url, sent_at: isoNow(),
       });
-      writeStored(SENDS_KEY, sends.slice(0, MAX_SENDS));
       this.form.reset();
       this.pickSource(this.source);
       this.status("Принято в ящик — ждёт Mac. Ответ появится в «Отправленных».", "ok");
@@ -314,6 +320,9 @@ export class UploadScreen {
       if (!item.answer) {
         badge = el("span", { class: "status pending" },
           item.problem || item.progress?.label || "ждёт Mac");
+      } else if (item.answer.status === "accepted" && item.answer.reviews) {
+        badge = el("span", { class: "status posted" },
+          `в пул отзывов: ${item.answer.reviews} ${plural(item.answer.reviews, REVIEWS)}`);
       } else if (item.answer.status === "accepted") {
         badge = el("span", { class: "status posted" },
           `принято: ${item.answer.posts} ${plural(item.answer.posts, POSTS)}`);

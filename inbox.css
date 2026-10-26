@@ -251,3 +251,6 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); }
   .meta { grid-template-columns: 1fr; gap: 0; }
   .meta dd { margin-bottom: .4rem; }
 }
+
+.review-counts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.review-counts .pill:not(.ok):not(.warn) { border: 1px solid currentColor; }

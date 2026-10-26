@@ -1,8 +1,9 @@
-// The Mac's snapshots in `state/`: meta (heartbeat), posts, channels, activity and thumbnails.
+// The Mac's snapshots in `state/`: meta (heartbeat), posts, channels, activity, the review
+// pool's counters and thumbnails.
 
 import { formatIn } from "./dom.js";
 
-const FILES = ["posts", "channels", "activity"];
+const FILES = ["posts", "channels", "activity", "reviews"];
 
 export class MacState {
   constructor(bucket) {
@@ -11,6 +12,7 @@ export class MacState {
     this.posts = [];
     this.channels = [];
     this.activity = { runs: [], log_lines: [] };
+    this.reviews = { free: 0, used: 0 };
     this.thumbs = new Map(); // key -> Promise of an object URL (or null)
   }
 
@@ -22,12 +24,13 @@ export class MacState {
   async load() {
     this.meta = await this.bucket.getJson("state/meta.json");
     if (this.meta === null) return false;
-    const [posts, channels, activity] = await Promise.all(
+    const [posts, channels, activity, reviews] = await Promise.all(
       FILES.map((name) => this.bucket.getJson(`state/${name}.json`)),
     );
     this.posts = posts?.posts || [];
     this.channels = channels?.channels || [];
     this.activity = activity || { runs: [], log_lines: [] };
+    this.reviews = reviews || { free: 0, used: 0 };
     return true;
   }
 
